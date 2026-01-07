@@ -1,219 +1,148 @@
-===================================================
-// TOP LEVEL MODULE MODIFICADO APRA  TINY TAPE OUT 
+
+
 // ============================================================
-module tt_um_contador_decimal (
-    input  wire [7:0] ui_in,    
-    output wire [7:0] uo_out,   
-    input  wire [7:0] uio_in,   
-    output wire [7:0] uio_out,  
-    output wire [7:0] uio_oe,   
-    input  wire       ena,      
-    input  wire       clk,      
-    input  wire       rst_n     
+// MODULO PRINCIPAL: SISTEMA CONTADOR + MULTIPLEXOR
+// ============================================================
+module sistema_contador_display (
+    input  logic reloj,   
+    input  logic reset_n,   
+    output logic [6:0] segmentos_out, 
+    output logic [2:0] anodos_out  
 );
 
-    wire [6:0] w_seg_cen;
-    wire [6:0] w_seg_dec;
-    wire [6:0] w_seg_uni;
-    wire rst_net = rst_n; 
+    // Señales internas
+    int cable_cuenta;
+    int cable_c, cable_d, cable_u;
+    logic [6:0] seg_c, seg_d, seg_u;
 
-    // Instancia del sistema completo
-    bloque_contador_interno u_sistema_contador (
-        .reloj   (clk),
-        .reset   (rst_net),
-        .seg_cen (w_seg_cen),
-        .seg_dec (w_seg_dec),
-        .seg_uni (w_seg_uni)
+    // 1. Instancia del Contador Principal
+    contador_principal inst_contador (
+        .reloj(reloj), 
+        .reset(reset_n), 
+        .cuenta_salida(cable_cuenta)
     );
 
-    // Multiplexor de displays
-    reg [16:0] scan_counter;
-    always @(posedge clk) begin
-        if (!rst_n) scan_counter <= 0;
-        else scan_counter <= scan_counter + 1;
+    // 2. Instancia del Separador Matemático
+    separador_por_corrimientos inst_math (
+        .cuenta_entrada(cable_cuenta), 
+        .c(cable_c), 
+        .d(cable_d), 
+        .u(cable_u)
+    );
+    
+    // 3. Conversión a 7 segmentos
+    driver_centenas inst_d_cen (.digito(cable_c), .seg(seg_c));
+    driver_decenas  inst_d_dec (.digito(cable_d), .seg(seg_d));
+    driver_unidades inst_d_uni (.digito(cable_u), .seg(seg_u));
+
+    // 4. Multiplexado de Salida (Barrido de Displays)
+    reg [16:0] contador_barrido;
+    
+    always_ff @(posedge reloj) begin
+        if (reset_n == 0) 
+            contador_barrido <= 0;
+        else 
+            contador_barrido <= contador_barrido + 1;
     end
+    
+    // Selección de turno basado en los bits más significativos
+    logic [1:0] turno;
+    assign turno = contador_barrido[16:15];
 
-    wire [1:0] selector = scan_counter[16:15]; 
-    reg [6:0] salida_segmentos;
-    reg [2:0] salida_anodos; 
-
-    always @(*) begin
-        case (selector)
+    always_comb begin
+        case(turno)
             2'b00: begin 
-                salida_segmentos = w_seg_uni;
-                salida_anodos    = 3'b110; 
+                segmentos_out = seg_u; 
+                anodos_out = 3'b110; // Activa Unidades
             end
             2'b01: begin 
-                salida_segmentos = w_seg_dec;
-                salida_anodos    = 3'b101; 
+                segmentos_out = seg_d; 
+                anodos_out = 3'b101; // Activa Decenas
             end
             2'b10: begin 
-                salida_segmentos = w_seg_cen;
-                salida_anodos    = 3'b011; 
+                segmentos_out = seg_c; 
+                anodos_out = 3'b011; // Activa Centenas
             end
             default: begin 
-                salida_segmentos = 7'b0000000; 
-                salida_anodos    = 3'b111; 
+                segmentos_out = 7'b0000000;   
+                anodos_out = 3'b111; // Apaga todo
             end
         endcase
     end
 
-    assign uo_out[6:0]  = salida_segmentos;
-    assign uo_out[7]    = 0;            
-    assign uio_out[2:0] = salida_anodos; 
-    assign uio_out[7:3] = 0;            
-    assign uio_oe       = 8'b11111111;  
-    
-    wire _unused = &{ena, ui_in, uio_in, 1'b0};
-
 endmodule
 
-
 // ============================================================
-// LOGICA INTERNA DEL CONTADOR
+// SUBMODULOS
 // ============================================================
-module bloque_contador_interno (
-    input  logic reloj,   
-    input  logic reset,   
-    output logic [6:0] seg_cen, 
-    output logic [6:0] seg_dec, 
-    output logic [6:0] seg_uni  
-);
 
-    int cable_cuenta;
-    int cable_c, cable_d, cable_u;
-
-    contador_principal inst_contador (
-        .reloj(reloj),
-        .reset(reset),
-        .cuenta_salida(cable_cuenta)
-    );
-
-    separador_matematico inst_matematicas (
-        .cuenta_entrada(cable_cuenta),
-        .c(cable_c),
-        .d(cable_d),
-        .u(cable_u)
-    );
-
-    driver_centenas  inst_disp_cen (.digito(cable_c), .seg(seg_cen));
-    driver_decenas   inst_disp_dec (.digito(cable_d), .seg(seg_dec));
-    driver_unidades  inst_disp_uni (.digito(cable_u), .seg(seg_uni));
-
-endmodule   
-
-module separador_matematico (
+module separador_por_corrimientos (
     input  int cuenta_entrada,
-    output int c,
-    output int d,
-    output int u
+    output int c, output int d, output int u
 );
-    assign c = cuenta_entrada / 100;
-    assign d = (cuenta_entrada % 100) / 10;
-    assign u = cuenta_entrada % 10;
+    int i;
+    logic [19:0] soporte; 
+    always_comb begin
+        soporte = 20'd0;
+        soporte[7:0] = cuenta_entrada[7:0];
+        for (i = 0; i < 8; i = i + 1) begin
+            if (soporte[19:16] >= 5) soporte[19:16] = soporte[19:16] + 3;
+            if (soporte[15:12] >= 5) soporte[15:12] = soporte[15:12] + 3;
+            if (soporte[11:8]  >= 5) soporte[11:8]  = soporte[11:8]  + 3;
+            soporte = soporte << 1;
+        end
+        c = soporte[19:16]; d = soporte[15:12]; u = soporte[11:8];
+    end
 endmodule
 
 module contador_principal (
-    input  logic reloj,
-    input  logic reset,
-    output int   cuenta_salida
+    input  logic reloj, input  logic reset, output int cuenta_salida
 );
     int FRECUENCIA_FPGA     = 50000000; 
     int NUMEROS_POR_SEGUNDO = 4;    
     int LIMITE              = 5; 
-    
-    int contador_tiempo;
-    int cuenta_interna;
+    int contador_tiempo; int cuenta_interna;
 
-    always_ff @(posedge reloj) 
-        begin
-        if (reset == 0)     
-                begin
-                    contador_tiempo <= 0;
-                    cuenta_interna  <= 0;
-                end 
-            else 
-                begin
-                    if (contador_tiempo == LIMITE) 
-                        begin
-                            contador_tiempo <= 0;
-                            if (cuenta_interna >= 255) 
-                                begin
-                                    cuenta_interna <= 0;
-                                end 
-                            else 
-                                begin
-                                    cuenta_interna <= cuenta_interna + 1;
-                                end
-                            end 
-                    else 
-                        begin
-                            contador_tiempo <= contador_tiempo + 1;
-                        end
-                    end
-                end
+    always_ff @(posedge reloj) begin
+        if (reset == 0) begin
+            contador_tiempo <= 0; cuenta_interna  <= 0;
+        end else begin
+            if (contador_tiempo == LIMITE) begin
+                contador_tiempo <= 0;
+                if (cuenta_interna >= 255) cuenta_interna <= 0;
+                else cuenta_interna <= cuenta_interna + 1;
+            end else contador_tiempo <= contador_tiempo + 1;
+        end
+    end
     assign cuenta_salida = cuenta_interna;
 endmodule
 
-module driver_centenas (
-    input  int digito,
-    output logic [6:0] seg
-);
+module driver_centenas (input int digito, output logic [6:0] seg);
     always_comb begin
         case (digito)
-            0: begin seg[6]=1; seg[5]=1; seg[4]=1; seg[3]=1; seg[2]=1; seg[1]=1; seg[0]=0; end
-            1: begin seg[6]=0; seg[5]=1; seg[4]=1; seg[3]=0; seg[2]=0; seg[1]=0; seg[0]=0; end
-            2: begin seg[6]=1; seg[5]=1; seg[4]=0; seg[3]=1; seg[2]=1; seg[1]=0; seg[0]=1; end
-            3: begin seg[6]=1; seg[5]=1; seg[4]=1; seg[3]=1; seg[2]=0; seg[1]=0; seg[0]=1; end
-            4: begin seg[6]=0; seg[5]=1; seg[4]=1; seg[3]=0; seg[2]=0; seg[1]=1; seg[0]=1; end
-            5: begin seg[6]=1; seg[5]=0; seg[4]=1; seg[3]=1; seg[2]=0; seg[1]=1; seg[0]=1; end
-            6: begin seg[6]=1; seg[5]=0; seg[4]=1; seg[3]=1; seg[2]=1; seg[1]=1; seg[0]=1; end
-            7: begin seg[6]=1; seg[5]=1; seg[4]=1; seg[3]=0; seg[2]=0; seg[1]=0; seg[0]=0; end
-            8: begin seg[6]=1; seg[5]=1; seg[4]=1; seg[3]=1; seg[2]=1; seg[1]=1; seg[0]=1; end
-            9: begin seg[6]=1; seg[5]=1; seg[4]=1; seg[3]=1; seg[2]=0; seg[1]=1; seg[0]=1; end
-            default: seg = 0;
+            0: seg=7'b1111110; 1: seg=7'b0110000; 2: seg=7'b1101101; 3: seg=7'b1111001;
+            4: seg=7'b0110011; 5: seg=7'b1011011; 6: seg=7'b1011111; 7: seg=7'b1110000;
+            8: seg=7'b1111111; 9: seg=7'b1111011; default: seg=0;
         endcase
     end
 endmodule
 
-module driver_decenas (
-    input  int digito,
-    output logic [6:0] seg
-);
+module driver_decenas (input int digito, output logic [6:0] seg);
     always_comb begin
         case (digito)
-            0: begin seg[6]=1; seg[5]=1; seg[4]=1; seg[3]=1; seg[2]=1; seg[1]=1; seg[0]=0; end
-            1: begin seg[6]=0; seg[5]=1; seg[4]=1; seg[3]=0; seg[2]=0; seg[1]=0; seg[0]=0; end
-            2: begin seg[6]=1; seg[5]=1; seg[4]=0; seg[3]=1; seg[2]=1; seg[1]=0; seg[0]=1; end
-            3: begin seg[6]=1; seg[5]=1; seg[4]=1; seg[3]=1; seg[2]=0; seg[1]=0; seg[0]=1; end
-            4: begin seg[6]=0; seg[5]=1; seg[4]=1; seg[3]=0; seg[2]=0; seg[1]=1; seg[0]=1; end
-            5: begin seg[6]=1; seg[5]=0; seg[4]=1; seg[3]=1; seg[2]=0; seg[1]=1; seg[0]=1; end
-            6: begin seg[6]=1; seg[5]=0; seg[4]=1; seg[3]=1; seg[2]=1; seg[1]=1; seg[0]=1; end
-            7: begin seg[6]=1; seg[5]=1; seg[4]=1; seg[3]=0; seg[2]=0; seg[1]=0; seg[0]=0; end
-            8: begin seg[6]=1; seg[5]=1; seg[4]=1; seg[3]=1; seg[2]=1; seg[1]=1; seg[0]=1; end
-            9: begin seg[6]=1; seg[5]=1; seg[4]=1; seg[3]=1; seg[2]=0; seg[1]=1; seg[0]=1; end
-            default: seg = 0;
+            0: seg=7'b1111110; 1: seg=7'b0110000; 2: seg=7'b1101101; 3: seg=7'b1111001;
+            4: seg=7'b0110011; 5: seg=7'b1011011; 6: seg=7'b1011111; 7: seg=7'b1110000;
+            8: seg=7'b1111111; 9: seg=7'b1111011; default: seg=0;
         endcase
     end
 endmodule
 
-module driver_unidades (
-    input  int digito,
-    output logic [6:0] seg
-);
+module driver_unidades (input int digito, output logic [6:0] seg);
     always_comb begin
         case (digito)
-            0: begin seg[6]=1; seg[5]=1; seg[4]=1; seg[3]=1; seg[2]=1; seg[1]=1; seg[0]=0; end
-            1: begin seg[6]=0; seg[5]=1; seg[4]=1; seg[3]=0; seg[2]=0; seg[1]=0; seg[0]=0; end
-            2: begin seg[6]=1; seg[5]=1; seg[4]=0; seg[3]=1; seg[2]=1; seg[1]=0; seg[0]=1; end
-            3: begin seg[6]=1; seg[5]=1; seg[4]=1; seg[3]=1; seg[2]=0; seg[1]=0; seg[0]=1; end
-            4: begin seg[6]=0; seg[5]=1; seg[4]=1; seg[3]=0; seg[2]=0; seg[1]=1; seg[0]=1; end
-            5: begin seg[6]=1; seg[5]=0; seg[4]=1; seg[3]=1; seg[2]=0; seg[1]=1; seg[0]=1; end
-            6: begin seg[6]=1; seg[5]=0; seg[4]=1; seg[3]=1; seg[2]=1; seg[1]=1; seg[0]=1; end
-            7: begin seg[6]=1; seg[5]=1; seg[4]=1; seg[3]=0; seg[2]=0; seg[1]=0; seg[0]=0; end
-            8: begin seg[6]=1; seg[5]=1; seg[4]=1; seg[3]=1; seg[2]=1; seg[1]=1; seg[0]=1; end
-            9: begin seg[6]=1; seg[5]=1; seg[4]=1; seg[3]=1; seg[2]=0; seg[1]=1; seg[0]=1; end
-            default: seg = 0;
+            0: seg=7'b1111110; 1: seg=7'b0110000; 2: seg=7'b1101101; 3: seg=7'b1111001;
+            4: seg=7'b0110011; 5: seg=7'b1011011; 6: seg=7'b1011111; 7: seg=7'b1110000;
+            8: seg=7'b1111111; 9: seg=7'b1111011; default: seg=0;
         endcase
     end
 endmodule
