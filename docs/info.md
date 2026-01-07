@@ -10,12 +10,12 @@ Contador binario de 8 bits. Cuenta de 0 a 255 y se reinicia (overflow) en cada c
 
 ## How it works
 
-Explain how your project works
+Contador binario de 8 bits (cuenta de 0 a 255). Suma 1 en cada ciclo de reloj si la entrada 0 está activada. Se reinicia automáticamente al llegar al final.
 
 ## How to test
 
-Explain how to use your project
+Modifique el estado de los interruptores de entrada y observe los cambios en los LEDs de salida para verificar la respuesta del sistema.
 
 ## External hardware
 
-List external hardware used in your project (e.g. PMOD, LED display, etc), if any
+Ninguno.
