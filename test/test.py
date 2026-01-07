@@ -5,7 +5,7 @@ import cocotb
 from cocotb.clock import Clock
 from cocotb.triggers import ClockCycles
 
-# Definimos el periodo del reloj (100ns -> 10 MHz)
+# Definimos el periodo del reloj (100ns -> 10 MHz) HALLO
 clk_period = 100 
 
 @cocotb.test()
