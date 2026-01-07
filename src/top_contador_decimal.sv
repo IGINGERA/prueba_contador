@@ -1,5 +1,3 @@
-
-
 // ============================================================
 // MODULO PRINCIPAL: SISTEMA CONTADOR + MULTIPLEXOR
 // ============================================================
@@ -64,7 +62,7 @@ module sistema_contador_display (
                 anodos_out = 3'b011; // Activa Centenas
             end
             default: begin 
-                segmentos_out = 7'b0000000;   
+                segmentos_out = 7'b0000000;    
                 anodos_out = 3'b111; // Apaga todo
             end
         endcase
@@ -80,18 +78,25 @@ module separador_por_corrimientos (
     input  int cuenta_entrada,
     output int c, output int d, output int u
 );
-    int i;
-    logic [19:0] soporte; 
-    always_comb begin
+    integer i;
+    reg [19:0] soporte; 
+    
+    // CAMBIO IMPORTANTE: Usamos always @(*) en lugar de always_comb
+    // para evitar el error de "constant selects" en Icarus Verilog
+    always @(*) begin
         soporte = 20'd0;
         soporte[7:0] = cuenta_entrada[7:0];
+        
         for (i = 0; i < 8; i = i + 1) begin
             if (soporte[19:16] >= 5) soporte[19:16] = soporte[19:16] + 3;
             if (soporte[15:12] >= 5) soporte[15:12] = soporte[15:12] + 3;
             if (soporte[11:8]  >= 5) soporte[11:8]  = soporte[11:8]  + 3;
             soporte = soporte << 1;
         end
-        c = soporte[19:16]; d = soporte[15:12]; u = soporte[11:8];
+        
+        c = soporte[19:16]; 
+        d = soporte[15:12]; 
+        u = soporte[11:8];
     end
 endmodule
 
@@ -100,7 +105,7 @@ module contador_principal (
 );
     int FRECUENCIA_FPGA     = 50000000; 
     int NUMEROS_POR_SEGUNDO = 4;    
-    int LIMITE              = 5; 
+    int LIMITE              = 5; // Valor pequeño para simulación
     int contador_tiempo; int cuenta_interna;
 
     always_ff @(posedge reloj) begin
