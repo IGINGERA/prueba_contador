@@ -6,6 +6,7 @@ sections.
 You can also include images in this folder and reference them in the markdown. Each image must be less than
 512 kb in size, and the combined size of all images must be less than 1 MB.
 -->
+Contador binario de 8 bits. Cuenta de 0 a 255 y se reinicia (overflow) en cada ciclo de reloj si la entrada enable es 1. Usa reset activo en bajo.
 
 ## How it works
 
